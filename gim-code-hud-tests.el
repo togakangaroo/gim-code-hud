@@ -181,5 +181,103 @@ Blocks until the callback fires (up to 5 s) and returns its argument."
                      (gim-code-hud-test/call-sync
                       #'gim-code-hud--git-status-async file))))))
 
+;;;; ─── Co-change partners ────────────────────────────────────────────────────
+
+;; Raw output from `git log --follow --name-only --format=COMMIT <file>'
+;; looks like: "COMMIT\n\nfile-a\nfile-b\n\nCOMMIT\n\nfile-a\n\n"
+;; (blank line after COMMIT header, blank line as commit separator)
+
+(defun gim-code-hud-test--co-change-output (&rest commit-file-lists)
+  "Build fake `git log --pretty=tformat:COMMIT --name-only' output.
+Each element of COMMIT-FILE-LISTS is a list of filenames for one commit.
+Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
+  (mapconcat (lambda (files)
+               (concat "COMMIT\n\n" (mapconcat #'identity files "\n") "\n"))
+             commit-file-lists ""))
+
+;;; Parser unit tests
+
+(ert-deftest gim-code-hud-test/co-changes-parse-empty ()
+  "No commits → empty partner list."
+  (should (null (gim-code-hud--parse-co-changes "foo.el" ""))))
+
+(ert-deftest gim-code-hud-test/co-changes-parse-solo-commit ()
+  "Commit touching only the target file → no partners."
+  (let ((output (gim-code-hud-test--co-change-output '("foo.el"))))
+    (should (null (gim-code-hud--parse-co-changes "foo.el" output)))))
+
+(ert-deftest gim-code-hud-test/co-changes-parse-single-partner ()
+  "One commit with one partner → count of 1."
+  (let ((output (gim-code-hud-test--co-change-output '("foo.el" "bar.el"))))
+    (should (equal '(("bar.el" . 1))
+                   (gim-code-hud--parse-co-changes "foo.el" output)))))
+
+(ert-deftest gim-code-hud-test/co-changes-parse-excludes-self ()
+  "Target file is never in its own partner list."
+  (let ((output (gim-code-hud-test--co-change-output '("foo.el" "bar.el" "foo.el"))))
+    (should (null (rassoc "foo.el"
+                          (gim-code-hud--parse-co-changes "foo.el" output))))))
+
+(ert-deftest gim-code-hud-test/co-changes-parse-counts-and-sort ()
+  "Multiple commits accumulate counts; results sorted descending."
+  (let* ((output (gim-code-hud-test--co-change-output
+                  '("foo.el" "bar.el" "baz.el")   ; bar+1 baz+1
+                  '("foo.el" "bar.el")             ; bar+1
+                  '("foo.el" "qux.el")))           ; qux+1
+         (result (gim-code-hud--parse-co-changes "foo.el" output)))
+    (should (equal "bar.el" (car (nth 0 result))))
+    (should (= 2            (cdr (nth 0 result))))
+    (should (= 1            (cdr (nth 1 result))))
+    (should (= 1            (cdr (nth 2 result))))
+    ;; bar must be first
+    (should (equal "bar.el" (caar result)))))
+
+;;; Async integration tests
+
+(ert-deftest gim-code-hud-test/co-changes-async-no-partners ()
+  "File committed alone every time has no co-change partners."
+  (gim-code-hud-test/with-repo repo
+    (gim-code-hud-test/commit repo "foo.el" "v1" "Commit 1")
+    (gim-code-hud-test/commit repo "foo.el" "v2" "Commit 2")
+    (let ((file (expand-file-name "foo.el" repo)))
+      (should (null (gim-code-hud-test/call-sync
+                     #'gim-code-hud--co-changes-async file))))))
+
+(ert-deftest gim-code-hud-test/co-changes-async-with-partners ()
+  "Files committed together are returned with correct counts, sorted descending."
+  (gim-code-hud-test/with-repo repo
+    (let ((default-directory repo))
+      ;; commit A: foo.el + bar.el + baz.el  → bar×1, baz×1
+      (with-temp-file (expand-file-name "foo.el" repo) (insert "f1"))
+      (with-temp-file (expand-file-name "bar.el" repo) (insert "b1"))
+      (with-temp-file (expand-file-name "baz.el" repo) (insert "z1"))
+      (call-process "git" nil nil nil "add" ".")
+      (call-process "git" nil nil nil "commit" "-m" "Commit A")
+      ;; commit B: foo.el + bar.el  → bar×2
+      (with-temp-file (expand-file-name "foo.el" repo) (insert "f2"))
+      (with-temp-file (expand-file-name "bar.el" repo) (insert "b2"))
+      (call-process "git" nil nil nil "add" ".")
+      (call-process "git" nil nil nil "commit" "-m" "Commit B"))
+    (let* ((file   (expand-file-name "foo.el" repo))
+           (result (gim-code-hud-test/call-sync
+                    #'gim-code-hud--co-changes-async file)))
+      (should (equal "bar.el" (caar result)))   ; bar first, count 2
+      (should (= 2 (cdar result)))
+      (should (= 1 (cdr (assoc "baz.el" result))))
+      (should (null (assoc "foo.el" result))))))
+
+(ert-deftest gim-code-hud-test/co-changes-async-excludes-self ()
+  "Target file never appears in its own co-change list."
+  (gim-code-hud-test/with-repo repo
+    (let ((default-directory repo))
+      (with-temp-file (expand-file-name "foo.el" repo) (insert "x"))
+      (with-temp-file (expand-file-name "bar.el" repo) (insert "y"))
+      (call-process "git" nil nil nil "add" ".")
+      (call-process "git" nil nil nil "commit" "-m" "Init"))
+    (let* ((file   (expand-file-name "foo.el" repo))
+           (result (gim-code-hud-test/call-sync
+                    #'gim-code-hud--co-changes-async file)))
+      (should (null (assoc "foo.el" result))))))
+
 (provide 'gim-code-hud-tests)
 ;;; gim-code-hud-tests.el ends here

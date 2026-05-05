@@ -79,13 +79,25 @@ Returns a sorted (PARTNER . COUNT) alist excluding REL itself."
                     collect (cons k (gethash k counts))))))
 
 (defun gim-code-hud--co-changes-async (file callback)
-  "Call CALLBACK with a sorted (PARTNER-FILE . COUNT) alist for FILE."
-  (let ((rel (file-name-nondirectory file)))
+  "Call CALLBACK with a sorted (PARTNER-FILE . COUNT) alist for FILE.
+Uses two git calls: one to find commits touching FILE, then one to expand
+each commit to all its changed files (git log --name-only filters by pathspec,
+so we cannot do this in a single invocation)."
+  (let ((dir (file-name-directory file))
+        (rel (file-name-nondirectory file)))
     (gim-code-hud--git-async
-     (file-name-directory file)
-     (list "log" "--follow" "--name-only" "--format=COMMIT" rel)
-     (lambda (output)
-       (funcall callback (gim-code-hud--parse-co-changes rel output))))))
+     dir
+     (list "log" "--follow" "--pretty=tformat:%H" "--" rel)
+     (lambda (sha-output)
+       (let ((shas (-remove #'string-empty-p (split-string sha-output "\n"))))
+         (if (null shas)
+             (funcall callback nil)
+           (gim-code-hud--git-async
+            dir
+            (append (list "log" "--no-walk" "--name-only" "--pretty=tformat:COMMIT") shas)
+            (lambda (output)
+              (funcall callback
+                       (gim-code-hud--parse-co-changes rel output))))))))))
 
 (provide 'gim-code-hud-git)
 ;;; gim-code-hud-git.el ends here
