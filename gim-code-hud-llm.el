@@ -1,10 +1,21 @@
 ;;; -*- lexical-binding: t -*-
-;;; gim-code-hud-llm.el --- Claude API integration and caching for gim-code-hud
+;;; gim-code-hud-llm.el --- Claude CLI integration and caching for gim-code-hud
 
 (require 'cl-lib)
-(require 'url)
-(require 'json)
+(require 'async)
 (require 'gim-code-hud-git)
+
+;;; Configuration
+
+(defcustom gim-code-hud-cli "claude"
+  "Path to the Claude CLI executable."
+  :type 'string
+  :group 'gim-code-hud)
+
+(defcustom gim-code-hud-model nil
+  "Claude model to pass via --model, or nil to use the CLI default."
+  :type '(choice (const nil) string)
+  :group 'gim-code-hud)
 
 ;;; Cache
 
@@ -24,60 +35,33 @@
 ;;; Cache key helpers
 
 (defun gim-code-hud--purpose-key (file)
-  "Cache key for purpose summary: file + mtime hour."
+  "Cache key for purpose summary: file path + mtime hour."
   (format "purpose:%s:%s"
           file
           (format-time-string "%Y-%m-%dT%H" (nth 5 (file-attributes file)))))
 
 (defun gim-code-hud--history-key (file)
-  "Cache key for history summary: file + mtime date."
+  "Cache key for history summary: file path + mtime date."
   (format "history:%s:%s"
           file
           (format-time-string "%Y-%m-%d" (nth 5 (file-attributes file)))))
 
-;;; Claude API
-
-(defcustom gim-code-hud-api-key nil
-  "Anthropic API key.  Falls back to the ANTHROPIC_API_KEY environment variable."
-  :type '(choice (const nil) string)
-  :group 'gim-code-hud)
-
-(defcustom gim-code-hud-model "claude-haiku-4-5-20251001"
-  "Claude model to use for summaries."
-  :type 'string
-  :group 'gim-code-hud)
-
-(defun gim-code-hud--api-key ()
-  "Return the API key or signal an error if absent."
-  (or gim-code-hud-api-key
-      (getenv "ANTHROPIC_API_KEY")
-      (error "gim-code-hud: set `gim-code-hud-api-key' or ANTHROPIC_API_KEY")))
+;;; Claude CLI call
 
 (defun gim-code-hud--call-claude (prompt callback)
-  "Send PROMPT to the Claude API and call CALLBACK with the response text."
-  (let* ((api-key (gim-code-hud--api-key))
-         (body (json-encode
-                `((model . ,gim-code-hud-model)
-                  (max_tokens . 512)
-                  (messages . [((role . "user") (content . ,prompt))]))))
-         (url-request-method "POST")
-         (url-request-extra-headers
-          `(("Content-Type"      . "application/json")
-            ("x-api-key"         . ,api-key)
-            ("anthropic-version" . "2023-06-01")))
-         (url-request-data (encode-coding-string body 'utf-8)))
-    (url-retrieve
-     "https://api.anthropic.com/v1/messages"
-     (lambda (status)
-       (if (plist-get status :error)
-           (message "gim-code-hud: API error %S" (plist-get status :error))
-         (goto-char (point-min))
-         (re-search-forward "\r?\n\r?\n")
-         (let* ((json-object-type 'alist)
-                (data (json-read))
-                (text (alist-get 'text (aref (alist-get 'content data) 0))))
-           (funcall callback text))))
-     nil t)))
+  "Send PROMPT to the Claude CLI and call CALLBACK with the response text.
+Uses `gim-code-hud-cli' (`claude -p') as a subprocess; non-blocking."
+  (let ((args (append
+               (when gim-code-hud-model (list "--model" gim-code-hud-model))
+               (list "-p" prompt))))
+    (apply #'async-start-process
+           "gim-code-hud-claude" gim-code-hud-cli
+           (lambda (proc)
+             (let ((text (with-current-buffer (process-buffer proc)
+                           (string-trim (buffer-string)))))
+               (kill-buffer (process-buffer proc))
+               (funcall callback text)))
+           args)))
 
 ;;; Public API
 
