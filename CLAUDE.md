@@ -55,6 +55,24 @@ Use `emacsclient` to try things out interactively before committing to an implem
 
 **Before any destructive emacs or filesystem operation, ask the user for explicit confirmation.**
 
+## Running Tests
+
+Tests run inside the live Emacs session (which has all packages available) via emacsclient:
+
+```bash
+emacsclient -e '(progn
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-git.el")
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-llm.el")
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-render.el")
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud.el")
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-tests.el")
+  (ert-run-tests-interactively t))'
+```
+
+This reloads all source files and opens the `*ert*` buffer showing pass/fail results.  To re-run without reloading: `M-x ert RET t RET` inside Emacs.
+
+**Never byte-compile these files** (no `M-x byte-compile-file`, no `.elc` in the repo).  Stale `.elc` files shadow the source and cause all async tests to silently timeout.  If `.elc` files appear, delete them: `rm *.elc`.
+
 ## LLM Caching
 
 - Purpose summary: keyed by `(file-path, mtime-hour)` — regenerates at most once per hour
