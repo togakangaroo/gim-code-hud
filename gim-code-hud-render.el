@@ -63,6 +63,30 @@ text may be freely edited."
 
 (define-key gim-code-hud-display-mode-map "q" #'quit-window)
 
+;;; Value formatters (structured data → display string)
+
+(defun gim-code-hud--format-contributors (pairs)
+  "Format contributor PAIRS ((AUTHOR . COUNT) ...) as a plain-text string."
+  (if (null pairs)
+      "(none)"
+    (mapconcat (lambda (pair)
+                 (format "%-30s %3d" (car pair) (cdr pair)))
+               pairs "\n")))
+
+(defun gim-code-hud--format-co-changes (pairs root)
+  "Format co-change PAIRS ((FILE . COUNT) ...) as an org-link string under ROOT."
+  (if (null pairs)
+      "(none)"
+    (mapconcat (lambda (pair)
+                 (let* ((file  (car pair))
+                        (count (cdr pair))
+                        (path  (expand-file-name file root)))
+                   (format "[[file:%s][%s]]%s%3d"
+                           path file
+                           (make-string (max 1 (- 40 (length file))) ?\s)
+                           count)))
+               (-take 10 pairs) "\n")))
+
 ;;; Init: write template
 
 (defun gim-code-hud/render-init (file)

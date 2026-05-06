@@ -1,6 +1,7 @@
 #!/bin/bash
 
 emacsclient -e '(progn
+  (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-db.el")
   (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-git.el")
   (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-llm.el")
   (load "/Users/georgemauer/code/gim-code-hud/gim-code-hud-render.el")

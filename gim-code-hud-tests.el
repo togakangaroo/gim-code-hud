@@ -111,7 +111,6 @@ Blocks until the callback fires (up to 5 s) and returns its argument."
   "with-claude-stub routes through the real async process path and returns canned text."
   (gim-code-hud-test/with-repo repo
     (gim-code-hud-test/commit repo "foo.el" ";; stub test" "Init")
-    (clrhash gim-code-hud--cache)
     (let ((file (expand-file-name "foo.el" repo)))
       (gim-code-hud-test/with-claude-stub "This is a stub response."
         (let ((got (gim-code-hud-test/call-sync #'gim-code-hud/get-purpose file)))
