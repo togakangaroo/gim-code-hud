@@ -424,5 +424,151 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
     (should-not (condition-case _ (progn (gim-code-hud/flush-pending pending) nil)
                   (error t)))))
 
+;;;; ─── Two-timer: staleness + push + toggles ────────────────────────────────
+
+;;; section-expired-p
+
+(ert-deftest gim-code-hud-test/staleness-expired-when-no-entry ()
+  "Section with no next-update entry is immediately expired."
+  (let ((gim-code-hud--next-update (make-hash-table :test #'equal)))
+    (should (gim-code-hud--section-expired-p "/some/file.el" "git-status"))))
+
+(ert-deftest gim-code-hud-test/staleness-not-expired-when-future ()
+  "Section with next-update in the future is not expired."
+  (let ((gim-code-hud--next-update (make-hash-table :test #'equal)))
+    (puthash (gim-code-hud--next-update-key "/some/file.el" "git-status")
+             (+ (float-time) 3600)
+             gim-code-hud--next-update)
+    (should-not (gim-code-hud--section-expired-p "/some/file.el" "git-status"))))
+
+(ert-deftest gim-code-hud-test/staleness-expired-when-past ()
+  "Section with next-update in the past is expired."
+  (let ((gim-code-hud--next-update (make-hash-table :test #'equal)))
+    (puthash (gim-code-hud--next-update-key "/some/file.el" "git-status")
+             (- (float-time) 1)
+             gim-code-hud--next-update)
+    (should (gim-code-hud--section-expired-p "/some/file.el" "git-status"))))
+
+;;; mark-updated
+
+(ert-deftest gim-code-hud-test/mark-updated-sets-future-timestamp ()
+  "mark-updated sets next-update to now+TTL, making the section non-expired."
+  (let ((gim-code-hud--next-update (make-hash-table :test #'equal)))
+    (gim-code-hud--mark-updated "/some/file.el" "git-status")
+    (should-not (gim-code-hud--section-expired-p "/some/file.el" "git-status"))))
+
+;;; seed-staleness
+
+(ert-deftest gim-code-hud-test/seed-staleness-from-db ()
+  "seed-staleness populates next-update from SQLite valid_until values."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db db)
+          (gim-code-hud--next-update (make-hash-table :test #'equal))
+          (file "/tmp/test-seed.el"))
+      (gim-code-hud--db-put db (gim-code-hud--db-key "git-status" file) "clean" 3600)
+      (gim-code-hud--seed-staleness file)
+      (should-not (gim-code-hud--section-expired-p file "git-status"))
+      (should     (gim-code-hud--section-expired-p file "purpose")))))
+
+;;; value-to-string
+
+(ert-deftest gim-code-hud-test/value-to-string-passthrough ()
+  "String values for git-status/purpose/history pass through unchanged."
+  (should (equal "clean"   (gim-code-hud--value-to-string "git-status"  "clean")))
+  (should (equal "Does X." (gim-code-hud--value-to-string "purpose"     "Does X.")))
+  (should (equal "Grew."   (gim-code-hud--value-to-string "history"     "Grew."))))
+
+(ert-deftest gim-code-hud-test/value-to-string-contributors ()
+  "Contributors alist is formatted as aligned name+count lines."
+  (let* ((pairs  '(("Alice Smith" . 12) ("Bob Jones" . 5)))
+         (result (gim-code-hud--value-to-string "contributors" pairs)))
+    (should (string-match-p "Alice Smith" result))
+    (should (string-match-p "12"          result))
+    (should (string-match-p "Bob Jones"   result))))
+
+(ert-deftest gim-code-hud-test/value-to-string-co-changes ()
+  "Co-changes alist is formatted as org links."
+  (let* ((gim-code-hud--current-root "/proj/")
+         (pairs  '(("bar.el" . 5) ("baz.el" . 1)))
+         (result (gim-code-hud--value-to-string "co-changes" pairs)))
+    (should (string-match-p "bar.el" result))
+    (should (string-match-p "5"      result))
+    (should (string-match-p "\\[\\[file:" result))))
+
+(ert-deftest gim-code-hud-test/value-to-string-nil-lists ()
+  "nil contributors and co-changes both produce \"(none)\"."
+  (should (equal "(none)" (gim-code-hud--value-to-string "contributors" nil)))
+  (let ((gim-code-hud--current-root "/proj/"))
+    (should (equal "(none)" (gim-code-hud--value-to-string "co-changes" nil)))))
+
+;;; push-result
+
+(ert-deftest gim-code-hud-test/push-result-populates-pending ()
+  "push-result adds the formatted value to pending-updates when file matches."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db             db)
+          (gim-code-hud--current-file   "/proj/foo.el")
+          (gim-code-hud--current-root   "/proj/")
+          (gim-code-hud--pending-updates (make-hash-table :test #'equal))
+          (gim-code-hud--next-update     (make-hash-table :test #'equal)))
+      (gim-code-hud--push-result "/proj/foo.el" "git-status" "clean")
+      (should (equal "clean"
+                     (car (gethash "git-status" gim-code-hud--pending-updates)))))))
+
+(ert-deftest gim-code-hud-test/push-result-ignores-stale-file ()
+  "push-result does nothing when the file no longer matches current-file."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db             db)
+          (gim-code-hud--current-file   "/proj/other.el")
+          (gim-code-hud--pending-updates (make-hash-table :test #'equal))
+          (gim-code-hud--next-update     (make-hash-table :test #'equal)))
+      (gim-code-hud--push-result "/proj/foo.el" "git-status" "clean")
+      (should (= 0 (hash-table-count gim-code-hud--pending-updates))))))
+
+(ert-deftest gim-code-hud-test/push-result-writes-to-sqlite ()
+  "push-result persists the formatted value to the SQLite cache."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db             db)
+          (gim-code-hud--current-file   "/proj/foo.el")
+          (gim-code-hud--current-root   "/proj/")
+          (gim-code-hud--pending-updates (make-hash-table :test #'equal))
+          (gim-code-hud--next-update     (make-hash-table :test #'equal)))
+      (gim-code-hud--push-result "/proj/foo.el" "git-status" "staged")
+      (should (equal "staged"
+                     (gim-code-hud--db-get
+                      db (gim-code-hud--db-key "git-status" "/proj/foo.el")))))))
+
+;;; HUD visibility
+
+(ert-deftest gim-code-hud-test/hud-visible-false-when-no-buffer ()
+  "hud-visible-p returns nil when the HUD buffer does not exist."
+  (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
+    (kill-buffer buf))
+  (should-not (gim-code-hud--hud-visible-p)))
+
+;;; Timer toggles
+
+(ert-deftest gim-code-hud-test/toggle-staleness-timer-on-off ()
+  "toggle-staleness-timer returns t when turning on and nil when turning off."
+  (let ((gim-code-hud--staleness-timer nil))
+    (unwind-protect
+        (progn
+          (should (eq t   (gim-code-hud/toggle-staleness-timer)))
+          (should (eq nil (gim-code-hud/toggle-staleness-timer))))
+      (when gim-code-hud--staleness-timer
+        (cancel-timer gim-code-hud--staleness-timer)
+        (setq gim-code-hud--staleness-timer nil)))))
+
+(ert-deftest gim-code-hud-test/toggle-flush-timer-on-off ()
+  "toggle-flush-timer returns t when turning on and nil when turning off."
+  (let ((gim-code-hud--flush-timer nil))
+    (unwind-protect
+        (progn
+          (should (eq t   (gim-code-hud/toggle-flush-timer)))
+          (should (eq nil (gim-code-hud/toggle-flush-timer))))
+      (when gim-code-hud--flush-timer
+        (cancel-timer gim-code-hud--flush-timer)
+        (setq gim-code-hud--flush-timer nil)))))
+
 (provide 'gim-code-hud-tests)
 ;;; gim-code-hud-tests.el ends here
