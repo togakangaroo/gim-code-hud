@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "./tools/run_tests.sh"
+    ]
+  }
+}
