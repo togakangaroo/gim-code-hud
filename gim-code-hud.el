@@ -50,6 +50,9 @@
 (defvar gim-code-hud--flush-timer nil
   "Repeating timer that flushes pending-updates to the HUD buffer every 0.5 s, or nil.")
 
+(defvar gim-code-hud--switch-timer nil
+  "One-shot idle timer (0.3 s) debouncing buffer switches before HUD render.")
+
 ;;; DB helpers
 
 (defun gim-code-hud--ensure-db (file)
@@ -162,29 +165,38 @@
       (gim-code-hud--start-timers)
     (gim-code-hud--stop-timers)))
 
-;;; File-switch handler
+;;; File-switch handler (debounced)
+
+(defun gim-code-hud--do-switch (file)
+  "Perform the HUD render for FILE after the debounce idle delay."
+  (setq gim-code-hud--switch-timer nil)
+  (let ((root (or (ignore-errors
+                    (let ((default-directory (file-name-directory file)))
+                      (vc-root-dir)))
+                  (file-name-directory file))))
+    (setq gim-code-hud--current-file file
+          gim-code-hud--current-root root)
+    (gim-code-hud--ensure-db file)
+    (gim-code-hud--seed-staleness file)
+    (let ((db gim-code-hud--db))
+      (dolist (sid '("git-status" "contributors" "co-changes" "purpose" "history"))
+        (when-let ((cached (gim-code-hud--db-get db (gim-code-hud--db-key sid file))))
+          (puthash sid (cons cached (float-time)) gim-code-hud--pending-updates))))
+    (gim-code-hud/render-init file)
+    ;; Flush cached values immediately so "(loading…)" is never visibly shown.
+    (gim-code-hud/flush-pending gim-code-hud--pending-updates)))
 
 (defun gim-code-hud--on-buffer-switch ()
-  "Update current-file when the user switches to a file-visiting buffer."
+  "Debounce buffer switches; schedule HUD render after 0.3 s of idle."
   (let ((buf (current-buffer)))
     (when (and (buffer-file-name buf)
                (not (equal (buffer-name buf) gim-code-hud--buffer-name)))
       (let ((file (buffer-file-name buf)))
         (unless (equal file gim-code-hud--current-file)
-          (let ((root (or (ignore-errors
-                            (let ((default-directory (file-name-directory file)))
-                              (vc-root-dir)))
-                          (file-name-directory file))))
-            (setq gim-code-hud--current-file file
-                  gim-code-hud--current-root root)
-            (gim-code-hud--ensure-db file)
-            (gim-code-hud--seed-staleness file)
-            ;; Pre-populate pending-updates with any still-valid cached values
-            (let ((db gim-code-hud--db))
-              (dolist (sid '("git-status" "contributors" "co-changes" "purpose" "history"))
-                (when-let ((cached (gim-code-hud--db-get db (gim-code-hud--db-key sid file))))
-                  (puthash sid (cons cached (float-time)) gim-code-hud--pending-updates))))
-            (gim-code-hud/render-init file)))))))
+          (when gim-code-hud--switch-timer
+            (cancel-timer gim-code-hud--switch-timer))
+          (setq gim-code-hud--switch-timer
+                (run-with-idle-timer 0.3 nil #'gim-code-hud--do-switch file)))))))
 
 
 
@@ -203,6 +215,9 @@
     (define-key gim-code-hud-display-mode-map "g" nil)
     (remove-hook 'buffer-list-update-hook   #'gim-code-hud--on-buffer-switch)
     (remove-hook 'window-configuration-change-hook #'gim-code-hud--visibility-update)
+    (when gim-code-hud--switch-timer
+      (cancel-timer gim-code-hud--switch-timer)
+      (setq gim-code-hud--switch-timer nil))
     (gim-code-hud--stop-timers)
     (when (and gim-code-hud--db (sqlitep gim-code-hud--db))
       (sqlite-close gim-code-hud--db)
