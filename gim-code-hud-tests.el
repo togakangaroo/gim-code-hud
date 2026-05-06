@@ -4,6 +4,7 @@
 (require 'ert)
 (require 'cl-lib)
 (add-to-list 'load-path (file-name-directory (or load-file-name buffer-file-name)))
+(require 'gim-code-hud-db)
 (require 'gim-code-hud-git)
 (require 'gim-code-hud-llm)
 (require 'gim-code-hud-render)
@@ -278,6 +279,151 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
            (result (gim-code-hud-test/call-sync
                     #'gim-code-hud--co-changes-async file)))
       (should (null (assoc "foo.el" result))))))
+
+;;;; ─── SQLite cache layer ────────────────────────────────────────────────────
+
+(defmacro gim-code-hud-test/with-db (var &rest body)
+  "Bind VAR to a fresh temporary SQLite DB, execute BODY, then close and delete it."
+  (declare (indent 1))
+  `(let* ((dir  (make-temp-file "gim-code-hud-db-test-" t))
+          (,var (gim-code-hud--db-open dir)))
+     (unwind-protect
+         (progn ,@body)
+       (sqlite-close ,var)
+       (delete-directory dir t))))
+
+(ert-deftest gim-code-hud-test/db-get-miss ()
+  "Missing key returns nil."
+  (gim-code-hud-test/with-db db
+    (should (null (gim-code-hud--db-get db "no-such-key")))))
+
+(ert-deftest gim-code-hud-test/db-put-get-roundtrip ()
+  "Value stored with a long TTL is returned by get."
+  (gim-code-hud-test/with-db db
+    (gim-code-hud--db-put db "k" "hello" 3600)
+    (should (equal "hello" (gim-code-hud--db-get db "k")))))
+
+(ert-deftest gim-code-hud-test/db-get-expired ()
+  "Value stored with a negative TTL is not returned (already expired)."
+  (gim-code-hud-test/with-db db
+    (gim-code-hud--db-put db "k" "stale" -1)
+    (should (null (gim-code-hud--db-get db "k")))))
+
+(ert-deftest gim-code-hud-test/db-put-replaces ()
+  "Putting a new value under the same key replaces the old one."
+  (gim-code-hud-test/with-db db
+    (gim-code-hud--db-put db "k" "first"  3600)
+    (gim-code-hud--db-put db "k" "second" 3600)
+    (should (equal "second" (gim-code-hud--db-get db "k")))))
+
+(ert-deftest gim-code-hud-test/db-valid-until-present ()
+  "valid-until returns a float > now for a freshly stored entry."
+  (gim-code-hud-test/with-db db
+    (gim-code-hud--db-put db "k" "v" 100)
+    (let ((vu (gim-code-hud--db-valid-until db "k")))
+      (should (floatp vu))
+      (should (> vu (float-time))))))
+
+(ert-deftest gim-code-hud-test/db-valid-until-absent ()
+  "valid-until returns nil for a key that was never stored."
+  (gim-code-hud-test/with-db db
+    (should (null (gim-code-hud--db-valid-until db "absent")))))
+
+(ert-deftest gim-code-hud-test/db-key-format ()
+  "db-key produces <section-id>:<absolute-path>."
+  (let ((key (gim-code-hud--db-key "purpose" "/home/user/foo.el")))
+    (should (string-prefix-p "purpose:" key))
+    (should (string-suffix-p "foo.el" key))))
+
+(ert-deftest gim-code-hud-test/db-ttl-lookup ()
+  "db-ttl returns configured TTL for known section IDs and 3600 for unknown."
+  (should (=     60 (gim-code-hud--db-ttl "git-status")))
+  (should (= 86400 (gim-code-hud--db-ttl "contributors")))
+  (should (=  3600 (gim-code-hud--db-ttl "purpose")))
+  (should (=  3600 (gim-code-hud--db-ttl "unknown-section"))))
+
+(ert-deftest gim-code-hud-test/db-persists-across-connections ()
+  "A value written in one connection is readable after reopening the DB file."
+  (let* ((dir  (make-temp-file "gim-code-hud-db-persist-" t))
+         (db1  (gim-code-hud--db-open dir)))
+    (unwind-protect
+        (progn
+          (gim-code-hud--db-put db1 "k" "persistent" 3600)
+          (sqlite-close db1)
+          (let ((db2 (gim-code-hud--db-open dir)))
+            (unwind-protect
+                (should (equal "persistent" (gim-code-hud--db-get db2 "k")))
+              (sqlite-close db2))))
+      (delete-directory dir t))))
+
+;;;; ─── Org render + flush ─────────────────────────────────────────────────────
+
+(defmacro gim-code-hud-test/with-hud-buffer (&rest body)
+  "Execute BODY with a fresh *gim-code-hud* buffer, then kill it."
+  (declare (indent 0))
+  `(unwind-protect
+       (progn ,@body)
+     (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
+       (kill-buffer buf))))
+
+(ert-deftest gim-code-hud-test/render-init-creates-buffer ()
+  "render-init creates the HUD buffer in gim-code-hud-display-mode."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (let ((buf (get-buffer gim-code-hud--buffer-name)))
+      (should buf)
+      (with-current-buffer buf
+        (should (derived-mode-p 'gim-code-hud-display-mode))))))
+
+(ert-deftest gim-code-hud-test/render-init-inserts-file-name ()
+  "render-init inserts the abbreviated file name into the buffer."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (with-current-buffer gim-code-hud--buffer-name
+      (should (string-match-p "file\\.el" (buffer-string))))))
+
+(ert-deftest gim-code-hud-test/render-init-has-all-sections ()
+  "render-init inserts all five GIM_CODE_HUD_ANALYSIS_ID properties."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (with-current-buffer gim-code-hud--buffer-name
+      (dolist (id '("git-status" "contributors" "co-changes" "purpose" "history"))
+        (should (org-find-property "GIM_CODE_HUD_ANALYSIS_ID" id))))))
+
+(ert-deftest gim-code-hud-test/flush-pending-updates-section ()
+  "flush-pending replaces the body of the named section."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (let ((pending (make-hash-table :test #'equal)))
+      (puthash "git-status" (cons "clean" (float-time)) pending)
+      (with-current-buffer gim-code-hud--buffer-name
+        (gim-code-hud/flush-pending pending))
+      (with-current-buffer gim-code-hud--buffer-name
+        (goto-char (org-find-property "GIM_CODE_HUD_ANALYSIS_ID" "git-status"))
+        (org-end-of-meta-data t)
+        (let ((body (buffer-substring-no-properties
+                     (point)
+                     (progn (outline-next-heading) (point)))))
+          (should (string-match-p "clean" body)))))))
+
+(ert-deftest gim-code-hud-test/flush-pending-drains-map ()
+  "flush-pending removes processed entries from the map."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (let ((pending (make-hash-table :test #'equal)))
+      (puthash "purpose" (cons "Does stuff." (float-time)) pending)
+      (with-current-buffer gim-code-hud--buffer-name
+        (gim-code-hud/flush-pending pending))
+      (should (= 0 (hash-table-count pending))))))
+
+(ert-deftest gim-code-hud-test/flush-pending-noop-on-missing-buffer ()
+  "flush-pending does not error when the HUD buffer does not exist."
+  (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
+    (kill-buffer buf))
+  (let ((pending (make-hash-table :test #'equal)))
+    (puthash "git-status" (cons "clean" (float-time)) pending)
+    (should-not (condition-case _ (progn (gim-code-hud/flush-pending pending) nil)
+                  (error t)))))
 
 (provide 'gim-code-hud-tests)
 ;;; gim-code-hud-tests.el ends here

@@ -1,88 +1,114 @@
 ;;; -*- lexical-binding: t -*-
-;;; gim-code-hud-render.el --- HUD buffer rendering for gim-code-hud
+;;; gim-code-hud-render.el --- Org-mode HUD buffer rendering for gim-code-hud
 
+(require 'org)
 (require 'cl-lib)
-(require 'dash)
 
 (defconst gim-code-hud--buffer-name "*gim-code-hud*")
 
-;;; Display mode
+;;; Template
 
-(define-derived-mode gim-code-hud-display-mode special-mode "HUD"
-  "Read-only display mode for the *gim-code-hud* buffer.
-Inherits `q' (bury) from `special-mode'; `g' is rebound to refresh."
-  :interactive nil)
+(defcustom gim-code-hud-org-template
+  "* HUD: {file}
 
-;;; Status face
+** Git Status
+:PROPERTIES:
+:GIM_CODE_HUD_ANALYSIS_ID: git-status
+:END:
 
-(defun gim-code-hud--status-face (status)
-  (pcase status
-    ("clean"     'success)
-    ("staged"    'diff-added)
-    ("dirty"     'warning)
-    ("untracked" 'shadow)
-    (_           'default)))
+(loading…)
 
-;;; Section helpers
+** Contributors
+:PROPERTIES:
+:GIM_CODE_HUD_ANALYSIS_ID: contributors
+:END:
 
-(defun gim-code-hud--insert-header (title)
-  "Insert a bold section TITLE."
-  (insert (propertize (concat "▸ " title "\n") 'face 'bold)))
+(loading…)
 
-(defun gim-code-hud--insert-contributors (pairs)
-  "Insert formatted contributor PAIRS (AUTHOR . COUNT)."
-  (if (null pairs)
-      (insert "  (none)\n")
-    (cl-loop for (author . count) in pairs
-             do (insert (format "  %-30s %3d\n" author count)))))
+** Co-change Partners
+:PROPERTIES:
+:GIM_CODE_HUD_ANALYSIS_ID: co-changes
+:END:
 
-(defun gim-code-hud--insert-co-changes (pairs root)
-  "Insert co-change PAIRS (FILE . COUNT) as clickable buttons resolved under ROOT."
-  (if (null pairs)
-      (insert "  (none)\n")
-    (cl-loop for (file . count) in (-take 10 pairs)
-             do (insert "  ")
-                (insert-text-button
-                 file
-                 'action (let ((target (expand-file-name file root)))
-                           (lambda (_btn) (find-file target)))
-                 'follow-link t
-                 'help-echo (format "Visit %s" file))
-                (insert (format "%s %3d\n"
-                                (make-string (max 1 (- 40 (length file))) ?\s)
-                                count)))))
+(loading…)
 
-;;; Public render entry point
+** Purpose
+:PROPERTIES:
+:GIM_CODE_HUD_ANALYSIS_ID: purpose
+:END:
 
-(defun gim-code-hud/render (data)
-  "Render DATA plist into the *gim-code-hud* buffer.
-DATA keys: :file :root :status :contributors :co-changes :purpose :history."
-  (let ((buf  (get-buffer-create gim-code-hud--buffer-name))
-        (root (or (plist-get data :root) default-directory)))
+(loading…)
+
+** History
+:PROPERTIES:
+:GIM_CODE_HUD_ANALYSIS_ID: history
+:END:
+
+(loading…)
+"
+  "Org-mode template for the *gim-code-hud* buffer.
+{file} is replaced with the abbreviated file path on init.
+Headings are located by the GIM_CODE_HUD_ANALYSIS_ID property; heading
+text may be freely edited."
+  :type 'string
+  :group 'gim-code-hud)
+
+;;; Display mode (org-mode derived)
+
+(define-derived-mode gim-code-hud-display-mode org-mode "HUD"
+  "Org-mode derived display mode for the *gim-code-hud* buffer.
+`q' buries the buffer; `g' (bound in gim-code-hud.el) forces a refresh."
+  :interactive nil
+  (setq-local org-startup-folded nil))
+
+(define-key gim-code-hud-display-mode-map "q" #'quit-window)
+
+;;; Init: write template
+
+(defun gim-code-hud/render-init (file)
+  "Erase the HUD buffer and insert the template for FILE."
+  (with-current-buffer (get-buffer-create gim-code-hud--buffer-name)
+    (unless (derived-mode-p 'gim-code-hud-display-mode)
+      (gim-code-hud-display-mode))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (string-replace "{file}" (abbreviate-file-name file)
+                              gim-code-hud-org-template)))
+    (goto-char (point-min))
+    (set-buffer-modified-p nil)))
+
+;;; Section body update
+
+(defun gim-code-hud--section-replace-body (section-id text)
+  "Replace body of the section with GIM_CODE_HUD_ANALYSIS_ID = SECTION-ID with TEXT."
+  (save-excursion
+    (goto-char (or (org-find-property "GIM_CODE_HUD_ANALYSIS_ID" section-id)
+                   (error "HUD section not found: %s" section-id)))
+    (org-end-of-meta-data t)
+    (let ((body-start (point)))
+      (outline-next-heading)
+      (let ((body-end (point)))
+        (delete-region body-start body-end)
+        (goto-char body-start)
+        (insert "\n" text "\n\n")))))
+
+;;; Flush: drain pending-updates map into buffer
+
+(defun gim-code-hud/flush-pending (pending-map)
+  "Drain PENDING-MAP (section-id → (value . retrieved-at)) into the HUD buffer.
+Clears each entry after writing. No-ops if the buffer does not exist."
+  (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
     (with-current-buffer buf
-      (unless (derived-mode-p 'gim-code-hud-display-mode)
-        (gim-code-hud-display-mode))
-      (let ((inhibit-read-only t)
-            (saved-pos (point)))
-        (erase-buffer)
-        (insert (propertize (format "HUD  %s\n\n" (plist-get data :file))
-                            'face '(bold underline)))
-        (gim-code-hud--insert-header "Git status")
-        (let ((status (or (plist-get data :status) "…")))
-          (insert (propertize (format "  %s\n\n" status)
-                              'face (gim-code-hud--status-face status))))
-        (gim-code-hud--insert-header "Contributors")
-        (gim-code-hud--insert-contributors (plist-get data :contributors))
-        (insert "\n")
-        (gim-code-hud--insert-header "Co-change partners")
-        (gim-code-hud--insert-co-changes (plist-get data :co-changes) root)
-        (insert "\n")
-        (gim-code-hud--insert-header "Purpose")
-        (insert (format "  %s\n\n" (or (plist-get data :purpose) "(loading…)")))
-        (gim-code-hud--insert-header "History")
-        (insert (format "  %s\n\n" (or (plist-get data :history) "(loading…)")))
-        (goto-char (min saved-pos (point-max)))
-        (set-buffer-modified-p nil)))))
+      (let ((inhibit-read-only t))
+        (maphash
+         (lambda (section-id entry)
+           (condition-case err
+               (gim-code-hud--section-replace-body section-id (car entry))
+             (error (message "gim-code-hud flush error for %s: %s"
+                             section-id (error-message-string err))))
+           (remhash section-id pending-map))
+         pending-map))
+      (set-buffer-modified-p nil))))
 
 (provide 'gim-code-hud-render)
 ;;; gim-code-hud-render.el ends here

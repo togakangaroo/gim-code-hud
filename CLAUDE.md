@@ -2,6 +2,8 @@
 
 An Emacs extension providing a "heads up display" buffer with live analysis of the currently active file.
 
+Also look at @AGENTS.md
+
 ## Vision
 
 A dedicated HUD buffer (`*gim-code-hud*`) that auto-updates as you switch files, showing:
