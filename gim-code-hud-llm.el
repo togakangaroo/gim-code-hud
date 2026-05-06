@@ -51,7 +51,7 @@
    (file-name-directory file)
    (list "log" "--follow" "--oneline" (file-name-nondirectory file))
    (lambda (log)
-     (let ((prompt (format "In 5 sentences or fewer, narrate how this file evolved.\n\nGit log:\n%s" log)))
+     (let ((prompt (format "You are given a git log. In 5 sentences or fewer, narrate how the code in this log evolved over time.\n\nGit log:\n%s" log)))
        (gim-code-hud--call-claude prompt callback)))))
 
 (provide 'gim-code-hud-llm)

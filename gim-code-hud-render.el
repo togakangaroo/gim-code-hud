@@ -9,7 +9,8 @@
 ;;; Template
 
 (defcustom gim-code-hud-org-template
-  "* HUD: {file}
+  "#+STARTUP: hidedrawers
+* HUD: {file}
 
 ** Git Status
 :PROPERTIES:
@@ -99,6 +100,7 @@ text may be freely edited."
       (insert (string-replace "{file}" (abbreviate-file-name file)
                               gim-code-hud-org-template)))
     (goto-char (point-min))
+    (org-set-startup-visibility)
     (set-buffer-modified-p nil)))
 
 ;;; Section body update
