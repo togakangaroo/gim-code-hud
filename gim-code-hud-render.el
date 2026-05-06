@@ -116,7 +116,7 @@ text may be freely edited."
       (let ((body-end (point)))
         (delete-region body-start body-end)
         (goto-char body-start)
-        (insert "\n" text "\n\n")))))
+        (insert text "\n\n")))))
 
 ;;; Flush: drain pending-updates map into buffer
 
