@@ -578,6 +578,37 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
 
 ;;;; ─── Ad-hoc sections ───────────────────────────────────────────────────────
 
+(ert-deftest gim-code-hud-test/section-ttl-override-absent ()
+  "section-ttl-override returns nil when the property is not set."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (should (null (gim-code-hud--section-ttl-override "git-status")))))
+
+(ert-deftest gim-code-hud-test/section-ttl-override-present ()
+  "section-ttl-override returns the integer value of GIM_CODE_HUD_TTL_SECONDS."
+  (gim-code-hud-test/with-hud-buffer
+    (let ((gim-code-hud-org-template
+           (concat gim-code-hud-org-template
+                   "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 120\n:END:\n\n(loading…)\n")))
+      (gim-code-hud/render-init "/some/file.el")
+      (should (= 120 (gim-code-hud--section-ttl-override "custom"))))))
+
+(ert-deftest gim-code-hud-test/effective-ttl-uses-override ()
+  "effective-ttl returns the property value when GIM_CODE_HUD_TTL_SECONDS is set."
+  (gim-code-hud-test/with-hud-buffer
+    (let ((gim-code-hud-org-template
+           (concat gim-code-hud-org-template
+                   "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 300\n:END:\n\n(loading…)\n")))
+      (gim-code-hud/render-init "/some/file.el")
+      (should (= 300 (gim-code-hud--effective-ttl "custom"))))))
+
+(ert-deftest gim-code-hud-test/effective-ttl-falls-back-to-default ()
+  "effective-ttl falls back to gim-code-hud--db-ttl when no property is set."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (should (= (gim-code-hud--db-ttl "git-status")
+               (gim-code-hud--effective-ttl "git-status")))))
+
 (ert-deftest gim-code-hud-test/expand-cli-command ()
   "expand-cli-command substitutes ${active_file_path} in the template."
   (should (equal "claude -p /proj/foo.el"

@@ -102,9 +102,14 @@
              (nk  (gim-code-hud--next-update-key file section-id)))
         (puthash nk (or vu 0.0) gim-code-hud--next-update)))))
 
+(defun gim-code-hud--effective-ttl (section-id)
+  "Return the TTL for SECTION-ID, preferring GIM_CODE_HUD_TTL_SECONDS if set."
+  (or (gim-code-hud--section-ttl-override section-id)
+      (gim-code-hud--db-ttl section-id)))
+
 (defun gim-code-hud--mark-updated (file section-id)
   "Record that SECTION-ID for FILE was just fetched; set next update from TTL."
-  (let* ((ttl (gim-code-hud--db-ttl section-id))
+  (let* ((ttl (gim-code-hud--effective-ttl section-id))
          (nk  (gim-code-hud--next-update-key file section-id)))
     (puthash nk (+ (float-time) ttl) gim-code-hud--next-update)))
 
@@ -129,7 +134,7 @@
     (let* ((text (gim-code-hud--value-to-string section-id value))
            (db   (gim-code-hud--ensure-db file)))
       (gim-code-hud--db-put db (gim-code-hud--db-key section-id file)
-                            text (gim-code-hud--db-ttl section-id))
+                            text (gim-code-hud--effective-ttl section-id))
       (gim-code-hud--mark-updated file section-id)
       (puthash section-id (cons text (float-time)) gim-code-hud--pending-updates))))
 

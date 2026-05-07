@@ -132,6 +132,19 @@ Each line shows the co-change rate as a ceiling percentage before the file link.
         (goto-char body-start)
         (insert text "\n\n")))))
 
+;;; Per-section property readers
+
+(defun gim-code-hud--section-ttl-override (section-id)
+  "Return the GIM_CODE_HUD_TTL_SECONDS value for SECTION-ID, or nil if absent."
+  (when-let* ((buf (get-buffer gim-code-hud--buffer-name))
+              (pos (with-current-buffer buf
+                     (org-find-property "GIM_CODE_HUD_ANALYSIS_ID" section-id))))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char pos)
+        (when-let ((val (org-entry-get (point) "GIM_CODE_HUD_TTL_SECONDS")))
+          (string-to-number val))))))
+
 ;;; Ad-hoc section discovery
 
 (defun gim-code-hud--ad-hoc-sections ()

@@ -66,13 +66,14 @@ Add sections via `gim-code-hud-org-template-suffix` (set before the package load
 :PROPERTIES:
 :GIM_CODE_HUD_ANALYSIS_ID: teachable-moment
 :GIM_CODE_HUD_CLI_COMMAND: claude -p \"What lessons does ${active_file_path} hold for someone learning Rust? Two paragraphs max.\"
+:GIM_CODE_HUD_TTL_SECONDS: 7200
 :END:
 
 (loading…)
 ")
 ```
 
-Ad-hoc sections are cached in the same SQLite store as built-in sections (default TTL: 1 h). They participate in `gim-code-hud/refresh` — a full refresh re-fetches them; `C-u g` can target a single ad-hoc section by its ID.
+Ad-hoc sections are cached in the same SQLite store as built-in sections (default TTL: 1 h). Add `GIM_CODE_HUD_TTL_SECONDS` to override the TTL for any section — built-in or ad-hoc. They participate in `gim-code-hud/refresh` — a full refresh re-fetches them; `C-u g` can target a single ad-hoc section by its ID.
 
 ## How it works
 
