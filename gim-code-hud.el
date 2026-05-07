@@ -192,9 +192,13 @@
     (when (and (buffer-file-name buf)
                (not (equal (buffer-name buf) gim-code-hud--buffer-name)))
       (let ((file (buffer-file-name buf)))
+        ;; Always cancel any pending timer — even when returning to current-file.
+        ;; Without this, A→B→A leaves a stale timer-for-B running, which fires
+        ;; and corrupts current-file, starting an A↔B oscillation.
+        (when gim-code-hud--switch-timer
+          (cancel-timer gim-code-hud--switch-timer)
+          (setq gim-code-hud--switch-timer nil))
         (unless (equal file gim-code-hud--current-file)
-          (when gim-code-hud--switch-timer
-            (cancel-timer gim-code-hud--switch-timer))
           (setq gim-code-hud--switch-timer
                 (run-with-idle-timer 0.3 nil #'gim-code-hud--do-switch file)))))))
 
