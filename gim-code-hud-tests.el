@@ -608,10 +608,10 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
                (gim-code-hud--effective-ttl "git-status")))))
 
 (ert-deftest gim-code-hud-test/expand-cli-command ()
-  "expand-cli-command substitutes ${active_file_path} in the template."
+  "expand-cli-command substitutes {active_file_path} in the template."
   (should (equal "claude -p /proj/foo.el"
                  (gim-code-hud--expand-cli-command
-                  "claude -p ${active_file_path}" "/proj/foo.el"))))
+                  "claude -p {active_file_path}" "/proj/foo.el"))))
 
 (ert-deftest gim-code-hud-test/ad-hoc-sections-empty-when-no-buffer ()
   "ad-hoc-sections returns nil when the HUD buffer does not exist."
@@ -623,7 +623,7 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
   "ad-hoc-sections returns (id . command) for headings with CLI_COMMAND property."
   (gim-code-hud-test/with-hud-buffer
     (let ((gim-code-hud-org-template-suffix
-           "\n** My Analysis\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: my-analysis\n:GIM_CODE_HUD_CLI_COMMAND: echo ${active_file_path}\n:END:\n\n(loading…)\n"))
+           "\n** My Analysis\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: my-analysis\n:GIM_CODE_HUD_CLI_COMMAND: echo {active_file_path}\n:END:\n\n(loading…)\n"))
       (gim-code-hud/render-init "/some/file.el")
       (let ((sections (gim-code-hud--ad-hoc-sections)))
         (should (= 1 (length sections)))

@@ -74,8 +74,8 @@
           (mapcar #'car (gim-code-hud--ad-hoc-sections))))
 
 (defun gim-code-hud--expand-cli-command (template file)
-  "Expand TEMPLATE via s-format with active_file_path bound to FILE."
-  (s-format template 'aget `(("active_file_path" . ,file))))
+  "Expand TEMPLATE replacing {active_file_path} with FILE."
+  (string-replace "{active_file_path}" file template))
 
 (defun gim-code-hud--shell-async (command callback)
   "Run shell COMMAND asynchronously; call CALLBACK with trimmed stdout."

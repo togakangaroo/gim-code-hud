@@ -56,7 +56,7 @@ Enable globally:
 
 ## Ad-hoc sections
 
-You can define your own HUD sections directly in the org template by adding headings with a `GIM_CODE_HUD_CLI_COMMAND` property alongside the usual `GIM_CODE_HUD_ANALYSIS_ID`. The command is a shell string passed through `s-format`; the variable `${active_file_path}` expands to the absolute path of the current file.
+You can define your own HUD sections directly in the org template by adding headings with a `GIM_CODE_HUD_CLI_COMMAND` property alongside the usual `GIM_CODE_HUD_ANALYSIS_ID`. The command is a shell string; `{active_file_path}` expands to the absolute path of the current file (same `{variable}` style as `{file}` in the org template).
 
 Add sections via `gim-code-hud-org-template-suffix` (set before the package loads so it is baked into the default template value) or by customizing `gim-code-hud-org-template` directly:
 
@@ -65,7 +65,7 @@ Add sections via `gim-code-hud-org-template-suffix` (set before the package load
 ** Teachable Moment
 :PROPERTIES:
 :GIM_CODE_HUD_ANALYSIS_ID: teachable-moment
-:GIM_CODE_HUD_CLI_COMMAND: claude -p \"What lessons does ${active_file_path} hold for someone learning Rust? Two paragraphs max.\"
+:GIM_CODE_HUD_CLI_COMMAND: claude -p \"What lessons does {active_file_path} hold for someone learning Rust? Two paragraphs max.\"
 :GIM_CODE_HUD_TTL_SECONDS: 7200
 :END:
 
