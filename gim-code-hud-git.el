@@ -82,17 +82,21 @@ Returns a sorted (PARTNER . COUNT) alist excluding REL itself."
   "Call CALLBACK with (TOTAL . PAIRS) for FILE, or nil if FILE has no commits.
 TOTAL is the number of commits touching FILE; PAIRS is a sorted
 \((PARTNER-FILE . COUNT)) alist.  COUNT / TOTAL gives the co-change rate."
-  (let ((dir (file-name-directory file))
-        (rel (file-name-nondirectory file)))
+  (let* ((dir  (file-name-directory file))
+         (root (or (ignore-errors
+                     (let ((default-directory dir))
+                       (vc-root-dir)))
+                   dir))
+         (rel  (file-relative-name file root)))
     (gim-code-hud--git-async
-     dir
+     root
      (list "log" "--follow" "--pretty=tformat:%H" "--" rel)
      (lambda (sha-output)
        (let ((shas (-remove #'string-empty-p (split-string sha-output "\n"))))
          (if (null shas)
              (funcall callback nil)
            (gim-code-hud--git-async
-            dir
+            root
             (append (list "log" "--no-walk" "--name-only" "--pretty=tformat:COMMIT") shas)
             (lambda (output)
               (funcall callback

@@ -37,10 +37,9 @@ database outside version-controlled trees or in a shared cache location."
                  directory)
   :group 'gim-code-hud)
 
-(defun gim-code-hud--db-dir (file)
-  "Return the directory where the cache DB for FILE's project should live."
-  (or gim-code-hud-db-directory
-      (ignore-errors
+(defun gim-code-hud--project-root (file)
+  "Return the project root for FILE: projectile → vc-root-dir → file directory."
+  (or (ignore-errors
         (let ((default-directory (file-name-directory file)))
           (and (fboundp 'projectile-project-root)
                (projectile-project-root))))
@@ -48,6 +47,11 @@ database outside version-controlled trees or in a shared cache location."
         (let ((default-directory (file-name-directory file)))
           (vc-root-dir)))
       (file-name-directory file)))
+
+(defun gim-code-hud--db-dir (file)
+  "Return the directory where the cache DB for FILE's project should live."
+  (or gim-code-hud-db-directory
+      (gim-code-hud--project-root file)))
 
 ;;; Connection
 

@@ -166,7 +166,7 @@
 (defun gim-code-hud--do-switch (file)
   "Perform the HUD render for FILE after the debounce idle delay."
   (setq gim-code-hud--switch-timer nil)
-  (let ((root (gim-code-hud--db-dir file)))
+  (let ((root (gim-code-hud--project-root file)))
     (setq gim-code-hud--current-file file
           gim-code-hud--current-root root)
     (gim-code-hud--ensure-db file)
@@ -240,6 +240,7 @@
     (dolist (section-id '("git-status" "contributors" "co-changes" "purpose" "history"))
       (puthash (gim-code-hud--next-update-key gim-code-hud--current-file section-id)
                0.0 gim-code-hud--next-update))
+    (gim-code-hud/render-init gim-code-hud--current-file)
     (gim-code-hud--staleness-tick)))
 
 ;;;###autoload
