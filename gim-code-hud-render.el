@@ -3,6 +3,7 @@
 
 (require 'org)
 (require 'cl-lib)
+(require 's)
 
 (defconst gim-code-hud--buffer-name "*gim-code-hud*")
 
@@ -16,7 +17,7 @@ Set this to add extra headings without replacing the entire template."
   :group 'gim-code-hud)
 
 (defcustom gim-code-hud-org-template
-  (concat "#+STARTUP: hidedrawers
+  (s-format "#+STARTUP: hidedrawers
 * HUD: {file}
 
 ** Git Status
@@ -53,8 +54,8 @@ Set this to add extra headings without replacing the entire template."
 :END:
 
 (loading…)
-"
-          gim-code-hud-org-template-suffix)
+\${suffix}"
+    'aget `(("suffix" . ,gim-code-hud-org-template-suffix)))
   "Org-mode template for the *gim-code-hud* buffer.
 {file} is replaced with the abbreviated file path on init.
 Headings are located by the GIM_CODE_HUD_ANALYSIS_ID property; heading
