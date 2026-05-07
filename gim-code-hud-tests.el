@@ -587,18 +587,16 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
 (ert-deftest gim-code-hud-test/section-ttl-override-present ()
   "section-ttl-override returns the integer value of GIM_CODE_HUD_TTL_SECONDS."
   (gim-code-hud-test/with-hud-buffer
-    (let ((gim-code-hud-org-template
-           (concat gim-code-hud-org-template
-                   "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 120\n:END:\n\n(loading…)\n")))
+    (let ((gim-code-hud-org-template-suffix
+           "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 120\n:END:\n\n(loading…)\n"))
       (gim-code-hud/render-init "/some/file.el")
       (should (= 120 (gim-code-hud--section-ttl-override "custom"))))))
 
 (ert-deftest gim-code-hud-test/effective-ttl-uses-override ()
   "effective-ttl returns the property value when GIM_CODE_HUD_TTL_SECONDS is set."
   (gim-code-hud-test/with-hud-buffer
-    (let ((gim-code-hud-org-template
-           (concat gim-code-hud-org-template
-                   "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 300\n:END:\n\n(loading…)\n")))
+    (let ((gim-code-hud-org-template-suffix
+           "\n** Custom\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: custom\n:GIM_CODE_HUD_CLI_COMMAND: true\n:GIM_CODE_HUD_TTL_SECONDS: 300\n:END:\n\n(loading…)\n"))
       (gim-code-hud/render-init "/some/file.el")
       (should (= 300 (gim-code-hud--effective-ttl "custom"))))))
 
@@ -624,9 +622,8 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
 (ert-deftest gim-code-hud-test/ad-hoc-sections-discovers-cli-command ()
   "ad-hoc-sections returns (id . command) for headings with CLI_COMMAND property."
   (gim-code-hud-test/with-hud-buffer
-    (let ((gim-code-hud-org-template
-           (concat gim-code-hud-org-template
-                   "\n** My Analysis\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: my-analysis\n:GIM_CODE_HUD_CLI_COMMAND: echo ${active_file_path}\n:END:\n\n(loading…)\n")))
+    (let ((gim-code-hud-org-template-suffix
+           "\n** My Analysis\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: my-analysis\n:GIM_CODE_HUD_CLI_COMMAND: echo ${active_file_path}\n:END:\n\n(loading…)\n"))
       (gim-code-hud/render-init "/some/file.el")
       (let ((sections (gim-code-hud--ad-hoc-sections)))
         (should (= 1 (length sections)))
@@ -650,9 +647,8 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
 (ert-deftest gim-code-hud-test/all-section-ids-includes-ad-hoc ()
   "all-section-ids appends ad-hoc sections found in the HUD buffer."
   (gim-code-hud-test/with-hud-buffer
-    (let ((gim-code-hud-org-template
-           (concat gim-code-hud-org-template
-                   "\n** Extra\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: extra\n:GIM_CODE_HUD_CLI_COMMAND: true\n:END:\n\n(loading…)\n")))
+    (let ((gim-code-hud-org-template-suffix
+           "\n** Extra\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: extra\n:GIM_CODE_HUD_CLI_COMMAND: true\n:END:\n\n(loading…)\n"))
       (gim-code-hud/render-init "/some/file.el")
       (should (member "extra" (gim-code-hud--all-section-ids))))))
 

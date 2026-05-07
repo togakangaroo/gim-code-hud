@@ -17,7 +17,7 @@ Set this to add extra headings without replacing the entire template."
   :group 'gim-code-hud)
 
 (defcustom gim-code-hud-org-template
-  (s-format "#+STARTUP: hidedrawers
+  "#+STARTUP: hidedrawers
 * HUD: {file}
 
 ** Git Status
@@ -54,10 +54,10 @@ Set this to add extra headings without replacing the entire template."
 :END:
 
 (loading…)
-\${suffix}"
-    'aget `(("suffix" . ,gim-code-hud-org-template-suffix)))
+${suffix}"
   "Org-mode template for the *gim-code-hud* buffer.
 {file} is replaced with the abbreviated file path on init.
+${suffix} is replaced with `gim-code-hud-org-template-suffix' at render time.
 Headings are located by the GIM_CODE_HUD_ANALYSIS_ID property; heading
 text may be freely edited."
   :type 'string
@@ -111,8 +111,10 @@ Each line shows the co-change rate as a ceiling percentage before the file link.
       (gim-code-hud-display-mode))
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert (string-replace "{file}" (abbreviate-file-name file)
-                              gim-code-hud-org-template)))
+      (insert (string-replace
+               "{file}" (abbreviate-file-name file)
+               (s-format gim-code-hud-org-template 'aget
+                         `(("suffix" . ,gim-code-hud-org-template-suffix))))))
     (goto-char (point-min))
     (org-set-startup-visibility)
     (set-buffer-modified-p nil)))
