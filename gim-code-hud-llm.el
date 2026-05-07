@@ -33,12 +33,26 @@
                (funcall callback text)))
            args)))
 
+;;; Prompt templates
+
+(defcustom gim-code-hud-purpose-prompt
+  "In 3 sentences or fewer, describe what this file does.\n\n%s"
+  "Format string for the purpose prompt.  %s is replaced with the file contents."
+  :type 'string
+  :group 'gim-code-hud)
+
+(defcustom gim-code-hud-history-prompt
+  "You are given a git log. In 5 sentences or fewer, narrate how the code in this log evolved over time.\n\nGit log:\n%s"
+  "Format string for the history prompt.  %s is replaced with the git log."
+  :type 'string
+  :group 'gim-code-hud)
+
 ;;; Public API
 
 ;;;###autoload
 (defun gim-code-hud/get-purpose (file callback)
   "Call CALLBACK with a ≤3-sentence purpose summary for FILE."
-  (let ((prompt (format "In 3 sentences or fewer, describe what this file does.\n\n%s"
+  (let ((prompt (format gim-code-hud-purpose-prompt
                         (with-temp-buffer
                           (insert-file-contents file)
                           (buffer-string)))))
@@ -51,8 +65,7 @@
    (file-name-directory file)
    (list "log" "--follow" "--oneline" (file-name-nondirectory file))
    (lambda (log)
-     (let ((prompt (format "You are given a git log. In 5 sentences or fewer, narrate how the code in this log evolved over time.\n\nGit log:\n%s" log)))
-       (gim-code-hud--call-claude prompt callback)))))
+     (gim-code-hud--call-claude (format gim-code-hud-history-prompt log) callback))))
 
 (provide 'gim-code-hud-llm)
 ;;; gim-code-hud-llm.el ends here
