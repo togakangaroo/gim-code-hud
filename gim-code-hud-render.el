@@ -60,7 +60,8 @@ text may be freely edited."
   "Org-mode derived display mode for the *gim-code-hud* buffer.
 `q' buries the buffer; `g' (bound in gim-code-hud.el) forces a refresh."
   :interactive nil
-  (setq-local org-startup-folded nil))
+  (setq-local org-startup-folded nil)
+  (setq-local truncate-lines t))
 
 (define-key gim-code-hud-display-mode-map "q" #'quit-window)
 
@@ -71,7 +72,7 @@ text may be freely edited."
   (if (null pairs)
       "(none)"
     (mapconcat (lambda (pair)
-                 (format "%-30s %3d" (car pair) (cdr pair)))
+                 (format "%3d  %s" (cdr pair) (car pair)))
                pairs "\n")))
 
 (defun gim-code-hud--format-co-changes (value root)
