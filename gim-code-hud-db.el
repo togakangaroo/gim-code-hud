@@ -25,11 +25,35 @@
      valid_until REAL NOT NULL
    )")
 
+;;; DB directory resolution
+
+(defcustom gim-code-hud-db-directory nil
+  "Directory in which to store .gim-code-hud.db, or nil to auto-detect.
+When nil the project root is found via `projectile-project-root' (if loaded),
+then `vc-root-dir', then the file's own directory.  Set this — e.g. via
+dir-locals or a direnv-sourced env variable read at startup — to keep the
+database outside version-controlled trees or in a shared cache location."
+  :type '(choice (const :tag "Auto (project root)" nil)
+                 directory)
+  :group 'gim-code-hud)
+
+(defun gim-code-hud--db-dir (file)
+  "Return the directory where the cache DB for FILE's project should live."
+  (or gim-code-hud-db-directory
+      (ignore-errors
+        (let ((default-directory (file-name-directory file)))
+          (and (fboundp 'projectile-project-root)
+               (projectile-project-root))))
+      (ignore-errors
+        (let ((default-directory (file-name-directory file)))
+          (vc-root-dir)))
+      (file-name-directory file)))
+
 ;;; Connection
 
-(defun gim-code-hud--db-open (project-root)
-  "Open (or create) .gim-code-hud.db under PROJECT-ROOT and return the handle."
-  (let* ((path (expand-file-name ".gim-code-hud.db" project-root))
+(defun gim-code-hud--db-open (dir)
+  "Open (or create) .gim-code-hud.db under DIR and return the handle."
+  (let* ((path (expand-file-name ".gim-code-hud.db" dir))
          (db   (sqlite-open path)))
     (sqlite-execute db gim-code-hud--db-schema)
     db))

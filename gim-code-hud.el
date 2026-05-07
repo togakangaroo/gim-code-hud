@@ -56,14 +56,10 @@
 ;;; DB helpers
 
 (defun gim-code-hud--ensure-db (file)
-  "Open (or reuse) the SQLite DB rooted at FILE's project root."
-  (let ((root (or (ignore-errors
-                    (let ((default-directory (file-name-directory file)))
-                      (vc-root-dir)))
-                  (file-name-directory file))))
-    (unless (and gim-code-hud--db (sqlitep gim-code-hud--db))
-      (setq gim-code-hud--db (gim-code-hud--db-open root)))
-    gim-code-hud--db))
+  "Open (or reuse) the SQLite DB for FILE's project."
+  (unless (and gim-code-hud--db (sqlitep gim-code-hud--db))
+    (setq gim-code-hud--db (gim-code-hud--db-open (gim-code-hud--db-dir file))))
+  gim-code-hud--db)
 
 ;;; Staleness table helpers
 
@@ -170,10 +166,7 @@
 (defun gim-code-hud--do-switch (file)
   "Perform the HUD render for FILE after the debounce idle delay."
   (setq gim-code-hud--switch-timer nil)
-  (let ((root (or (ignore-errors
-                    (let ((default-directory (file-name-directory file)))
-                      (vc-root-dir)))
-                  (file-name-directory file))))
+  (let ((root (gim-code-hud--db-dir file)))
     (setq gim-code-hud--current-file file
           gim-code-hud--current-root root)
     (gim-code-hud--ensure-db file)
