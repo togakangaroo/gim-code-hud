@@ -576,5 +576,54 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
         (cancel-timer gim-code-hud--flush-timer)
         (setq gim-code-hud--flush-timer nil)))))
 
+;;;; ─── Ad-hoc sections ───────────────────────────────────────────────────────
+
+(ert-deftest gim-code-hud-test/expand-cli-command ()
+  "expand-cli-command substitutes ${active_file_path} in the template."
+  (should (equal "claude -p /proj/foo.el"
+                 (gim-code-hud--expand-cli-command
+                  "claude -p ${active_file_path}" "/proj/foo.el"))))
+
+(ert-deftest gim-code-hud-test/ad-hoc-sections-empty-when-no-buffer ()
+  "ad-hoc-sections returns nil when the HUD buffer does not exist."
+  (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
+    (kill-buffer buf))
+  (should (null (gim-code-hud--ad-hoc-sections))))
+
+(ert-deftest gim-code-hud-test/ad-hoc-sections-discovers-cli-command ()
+  "ad-hoc-sections returns (id . command) for headings with CLI_COMMAND property."
+  (gim-code-hud-test/with-hud-buffer
+    (let ((gim-code-hud-org-template
+           (concat gim-code-hud-org-template
+                   "\n** My Analysis\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: my-analysis\n:GIM_CODE_HUD_CLI_COMMAND: echo ${active_file_path}\n:END:\n\n(loading…)\n")))
+      (gim-code-hud/render-init "/some/file.el")
+      (let ((sections (gim-code-hud--ad-hoc-sections)))
+        (should (= 1 (length sections)))
+        (should (equal "my-analysis" (caar sections)))
+        (should (string-match-p "echo" (cdar sections)))))))
+
+(ert-deftest gim-code-hud-test/ad-hoc-sections-ignores-builtin-sections ()
+  "ad-hoc-sections does not return built-in sections (they lack CLI_COMMAND)."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (should (null (gim-code-hud--ad-hoc-sections)))))
+
+(ert-deftest gim-code-hud-test/all-section-ids-includes-builtins ()
+  "all-section-ids always contains the five built-in section IDs."
+  (gim-code-hud-test/with-hud-buffer
+    (gim-code-hud/render-init "/some/file.el")
+    (let ((ids (gim-code-hud--all-section-ids)))
+      (dolist (id '("git-status" "contributors" "co-changes" "purpose" "history"))
+        (should (member id ids))))))
+
+(ert-deftest gim-code-hud-test/all-section-ids-includes-ad-hoc ()
+  "all-section-ids appends ad-hoc sections found in the HUD buffer."
+  (gim-code-hud-test/with-hud-buffer
+    (let ((gim-code-hud-org-template
+           (concat gim-code-hud-org-template
+                   "\n** Extra\n:PROPERTIES:\n:GIM_CODE_HUD_ANALYSIS_ID: extra\n:GIM_CODE_HUD_CLI_COMMAND: true\n:END:\n\n(loading…)\n")))
+      (gim-code-hud/render-init "/some/file.el")
+      (should (member "extra" (gim-code-hud--all-section-ids))))))
+
 (provide 'gim-code-hud-tests)
 ;;; gim-code-hud-tests.el ends here

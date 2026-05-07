@@ -26,6 +26,7 @@
 (require 'gim-code-hud-git)
 (require 'gim-code-hud-llm)
 (require 'gim-code-hud-render)
+(require 's)
 
 ;;; Internal state
 
@@ -61,6 +62,32 @@
     (setq gim-code-hud--db (gim-code-hud--db-open (gim-code-hud--db-dir file))))
   gim-code-hud--db)
 
+;;; Ad-hoc section helpers
+
+(defconst gim-code-hud--builtin-section-ids
+  '("git-status" "contributors" "co-changes" "purpose" "history")
+  "Section IDs handled by built-in analysis functions.")
+
+(defun gim-code-hud--all-section-ids ()
+  "Return all section IDs: built-in plus any ad-hoc sections in the HUD buffer."
+  (append gim-code-hud--builtin-section-ids
+          (mapcar #'car (gim-code-hud--ad-hoc-sections))))
+
+(defun gim-code-hud--expand-cli-command (template file)
+  "Expand TEMPLATE via s-format with active_file_path bound to FILE."
+  (s-format template 'aget `(("active_file_path" . ,file))))
+
+(defun gim-code-hud--shell-async (command callback)
+  "Run shell COMMAND asynchronously; call CALLBACK with trimmed stdout."
+  (apply #'async-start-process
+         "gim-code-hud-cmd" "sh"
+         (lambda (proc)
+           (let ((text (with-current-buffer (process-buffer proc)
+                         (string-trim (buffer-string)))))
+             (kill-buffer (process-buffer proc))
+             (funcall callback text)))
+         (list "-c" command)))
+
 ;;; Staleness table helpers
 
 (defun gim-code-hud--next-update-key (file section-id)
@@ -69,10 +96,10 @@
 (defun gim-code-hud--seed-staleness (file)
   "Populate next-update table for FILE from SQLite valid_until values."
   (let ((db (gim-code-hud--ensure-db file)))
-    (dolist (section-id '("git-status" "contributors" "co-changes" "purpose" "history"))
-      (let* ((key      (gim-code-hud--db-key section-id file))
-             (vu       (gim-code-hud--db-valid-until db key))
-             (nk       (gim-code-hud--next-update-key file section-id)))
+    (dolist (section-id (gim-code-hud--all-section-ids))
+      (let* ((key (gim-code-hud--db-key section-id file))
+             (vu  (gim-code-hud--db-valid-until db key))
+             (nk  (gim-code-hud--next-update-key file section-id)))
         (puthash nk (or vu 0.0) gim-code-hud--next-update)))))
 
 (defun gim-code-hud--mark-updated (file section-id)
@@ -114,14 +141,19 @@
       ("contributors" (gim-code-hud--contributors-async file push))
       ("co-changes"   (gim-code-hud--co-changes-async   file push))
       ("purpose"      (gim-code-hud/get-purpose          file push))
-      ("history"      (gim-code-hud/get-history          file push)))))
+      ("history"      (gim-code-hud/get-history          file push))
+      (_
+       (when-let ((tmpl (cdr (assoc section-id (gim-code-hud--ad-hoc-sections)))))
+         (gim-code-hud--shell-async
+          (gim-code-hud--expand-cli-command tmpl file)
+          push))))))
 
 ;;; Staleness timer body
 
 (defun gim-code-hud--staleness-tick ()
   "Check all sections for the current file; fetch any that have expired."
   (when gim-code-hud--current-file
-    (dolist (section-id '("git-status" "contributors" "co-changes" "purpose" "history"))
+    (dolist (section-id (gim-code-hud--all-section-ids))
       (when (gim-code-hud--section-expired-p gim-code-hud--current-file section-id)
         (gim-code-hud--fetch-section gim-code-hud--current-file section-id)))))
 
@@ -170,12 +202,14 @@
     (setq gim-code-hud--current-file file
           gim-code-hud--current-root root)
     (gim-code-hud--ensure-db file)
+    ;; render-init before seed-staleness so ad-hoc sections are in the buffer
+    ;; when gim-code-hud--all-section-ids scans for them.
+    (gim-code-hud/render-init file)
     (gim-code-hud--seed-staleness file)
     (let ((db gim-code-hud--db))
-      (dolist (sid '("git-status" "contributors" "co-changes" "purpose" "history"))
+      (dolist (sid (gim-code-hud--all-section-ids))
         (when-let ((cached (gim-code-hud--db-get db (gim-code-hud--db-key sid file))))
           (puthash sid (cons cached (float-time)) gim-code-hud--pending-updates))))
-    (gim-code-hud/render-init file)
     ;; Flush cached values immediately so "(loading…)" is never visibly shown.
     (gim-code-hud/flush-pending gim-code-hud--pending-updates)))
 
@@ -233,15 +267,22 @@
   (pop-to-buffer gim-code-hud--buffer-name))
 
 ;;;###autoload
-(defun gim-code-hud/refresh ()
-  "Force a full HUD refresh for the current file by expiring all sections."
-  (interactive)
+(defun gim-code-hud/refresh (&optional section-id)
+  "Force a HUD refresh for the current file.
+With no argument, expire all sections and re-render the template.
+With SECTION-ID, invalidate only that section's cache (no re-render).
+Interactively, a prefix argument prompts for a section ID."
+  (interactive
+   (list (when current-prefix-arg
+           (completing-read "Section ID: " (gim-code-hud--all-section-ids) nil t))))
   (when gim-code-hud--current-file
-    (dolist (section-id '("git-status" "contributors" "co-changes" "purpose" "history"))
-      (puthash (gim-code-hud--next-update-key gim-code-hud--current-file section-id)
-               0.0 gim-code-hud--next-update))
-    (gim-code-hud/render-init gim-code-hud--current-file)
-    (gim-code-hud--staleness-tick)))
+    (let ((ids (if section-id (list section-id) (gim-code-hud--all-section-ids))))
+      (dolist (id ids)
+        (puthash (gim-code-hud--next-update-key gim-code-hud--current-file id)
+                 0.0 gim-code-hud--next-update))
+      (unless section-id
+        (gim-code-hud/render-init gim-code-hud--current-file))
+      (gim-code-hud--staleness-tick))))
 
 ;;;###autoload
 (defun gim-code-hud/toggle-staleness-timer ()

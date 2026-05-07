@@ -132,6 +132,23 @@ Each line shows the co-change rate as a ceiling percentage before the file link.
         (goto-char body-start)
         (insert text "\n\n")))))
 
+;;; Ad-hoc section discovery
+
+(defun gim-code-hud--ad-hoc-sections ()
+  "Return alist of (section-id . command) for ad-hoc sections in the HUD buffer.
+Ad-hoc sections carry both GIM_CODE_HUD_ANALYSIS_ID and GIM_CODE_HUD_CLI_COMMAND."
+  (when-let ((buf (get-buffer gim-code-hud--buffer-name)))
+    (with-current-buffer buf
+      (let (result)
+        (org-map-entries
+         (lambda ()
+           (let ((id  (org-entry-get (point) "GIM_CODE_HUD_ANALYSIS_ID"))
+                 (cmd (org-entry-get (point) "GIM_CODE_HUD_CLI_COMMAND")))
+             (when (and id cmd)
+               (push (cons id cmd) result))))
+         nil nil)
+        (nreverse result)))))
+
 ;;; Flush: drain pending-updates map into buffer
 
 (defun gim-code-hud/flush-pending (pending-map)
