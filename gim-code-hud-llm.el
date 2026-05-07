@@ -63,7 +63,7 @@
   "Call CALLBACK with a ≤5-sentence history narrative for FILE."
   (gim-code-hud--git-async
    (file-name-directory file)
-   (list "log" "--follow" "--oneline" (file-name-nondirectory file))
+   (list "log" "--follow" "--date=short" "--pretty=tformat:%ad %s" (file-name-nondirectory file))
    (lambda (log)
      (gim-code-hud--call-claude (format gim-code-hud-history-prompt log) callback))))
 
