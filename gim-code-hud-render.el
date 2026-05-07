@@ -106,18 +106,25 @@ Each line shows the co-change rate as a ceiling percentage before the file link.
 
 (defun gim-code-hud/render-init (file)
   "Erase the HUD buffer and insert the template for FILE."
-  (with-current-buffer (get-buffer-create gim-code-hud--buffer-name)
-    (unless (derived-mode-p 'gim-code-hud-display-mode)
-      (gim-code-hud-display-mode))
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (string-replace
-               "{file}" (abbreviate-file-name file)
-               (s-format gim-code-hud-org-template 'aget
-                         `(("suffix" . ,gim-code-hud-org-template-suffix))))))
-    (goto-char (point-min))
-    (org-set-startup-visibility)
-    (set-buffer-modified-p nil)))
+  ;; Read suffix from the file's buffer so that dir-locals apply.  The HUD
+  ;; buffer has no file association, so buffer-local customizations set via
+  ;; .dir-locals.el would be invisible if we read the variable here instead.
+  (let* ((file-buf (find-buffer-visiting file))
+         (suffix   (if file-buf
+                       (buffer-local-value 'gim-code-hud-org-template-suffix file-buf)
+                     gim-code-hud-org-template-suffix)))
+    (with-current-buffer (get-buffer-create gim-code-hud--buffer-name)
+      (unless (derived-mode-p 'gim-code-hud-display-mode)
+        (gim-code-hud-display-mode))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (string-replace
+                 "{file}" (abbreviate-file-name file)
+                 (s-format gim-code-hud-org-template 'aget
+                           `(("suffix" . ,suffix))))))
+      (goto-char (point-min))
+      (org-set-startup-visibility)
+      (set-buffer-modified-p nil))))
 
 ;;; Section body update
 
