@@ -8,8 +8,15 @@
 
 ;;; Template
 
+(defcustom gim-code-hud-org-template-suffix
+  ""
+  "Org-mode text appended to the default value of `gim-code-hud-org-template'.
+Set this to add extra headings without replacing the entire template."
+  :type 'string
+  :group 'gim-code-hud)
+
 (defcustom gim-code-hud-org-template
-  "#+STARTUP: hidedrawers
+  (concat "#+STARTUP: hidedrawers
 * HUD: {file}
 
 ** Git Status
@@ -47,6 +54,7 @@
 
 (loading…)
 "
+          gim-code-hud-org-template-suffix)
   "Org-mode template for the *gim-code-hud* buffer.
 {file} is replaced with the abbreviated file path on init.
 Headings are located by the GIM_CODE_HUD_ANALYSIS_ID property; heading
