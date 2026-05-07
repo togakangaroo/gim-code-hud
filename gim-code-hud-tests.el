@@ -235,16 +235,18 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
 ;;; Async integration tests
 
 (ert-deftest gim-code-hud-test/co-changes-async-no-partners ()
-  "File committed alone every time has no co-change partners."
+  "File committed alone has total > 0 but empty partner list."
   (gim-code-hud-test/with-repo repo
     (gim-code-hud-test/commit repo "foo.el" "v1" "Commit 1")
     (gim-code-hud-test/commit repo "foo.el" "v2" "Commit 2")
-    (let ((file (expand-file-name "foo.el" repo)))
-      (should (null (gim-code-hud-test/call-sync
-                     #'gim-code-hud--co-changes-async file))))))
+    (let* ((file   (expand-file-name "foo.el" repo))
+           (result (gim-code-hud-test/call-sync
+                    #'gim-code-hud--co-changes-async file)))
+      (should (= 2 (car result)))       ; 2 commits
+      (should (null (cdr result))))))   ; no partners
 
 (ert-deftest gim-code-hud-test/co-changes-async-with-partners ()
-  "Files committed together are returned with correct counts, sorted descending."
+  "Files committed together return (total . pairs) with correct counts and total."
   (gim-code-hud-test/with-repo repo
     (let ((default-directory repo))
       ;; commit A: foo.el + bar.el + baz.el  → bar×1, baz×1
@@ -260,14 +262,17 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
       (call-process "git" nil nil nil "commit" "-m" "Commit B"))
     (let* ((file   (expand-file-name "foo.el" repo))
            (result (gim-code-hud-test/call-sync
-                    #'gim-code-hud--co-changes-async file)))
-      (should (equal "bar.el" (caar result)))   ; bar first, count 2
-      (should (= 2 (cdar result)))
-      (should (= 1 (cdr (assoc "baz.el" result))))
-      (should (null (assoc "foo.el" result))))))
+                    #'gim-code-hud--co-changes-async file))
+           (total  (car result))
+           (pairs  (cdr result)))
+      (should (= 2 total))                              ; 2 commits touched foo.el
+      (should (equal "bar.el" (caar pairs)))            ; bar first
+      (should (= 2 (cdar pairs)))                       ; bar in both commits
+      (should (= 1 (cdr (assoc "baz.el" pairs))))       ; baz in one commit
+      (should (null (assoc "foo.el" pairs))))))         ; self excluded
 
 (ert-deftest gim-code-hud-test/co-changes-async-excludes-self ()
-  "Target file never appears in its own co-change list."
+  "Target file never appears in its own partner list."
   (gim-code-hud-test/with-repo repo
     (let ((default-directory repo))
       (with-temp-file (expand-file-name "foo.el" repo) (insert "x"))
@@ -277,7 +282,7 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
     (let* ((file   (expand-file-name "foo.el" repo))
            (result (gim-code-hud-test/call-sync
                     #'gim-code-hud--co-changes-async file)))
-      (should (null (assoc "foo.el" result))))))
+      (should (null (assoc "foo.el" (cdr result)))))))
 
 ;;;; ─── SQLite cache layer ────────────────────────────────────────────────────
 
@@ -487,12 +492,13 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
     (should (string-match-p "Bob Jones"   result))))
 
 (ert-deftest gim-code-hud-test/value-to-string-co-changes ()
-  "Co-changes alist is formatted as org links."
+  "Co-changes (total . pairs) is formatted as percentage + org-link lines."
   (let* ((gim-code-hud--current-root "/proj/")
-         (pairs  '(("bar.el" . 5) ("baz.el" . 1)))
-         (result (gim-code-hud--value-to-string "co-changes" pairs)))
-    (should (string-match-p "bar.el" result))
-    (should (string-match-p "5"      result))
+         (value  (cons 10 '(("bar.el" . 5) ("baz.el" . 1))))
+         (result (gim-code-hud--value-to-string "co-changes" value)))
+    (should (string-match-p "bar.el"      result))
+    (should (string-match-p "50%"         result))   ; 5/10 = 50%
+    (should (string-match-p "10%"         result))   ; ceil(1/10*100) = 10%
     (should (string-match-p "\\[\\[file:" result))))
 
 (ert-deftest gim-code-hud-test/value-to-string-nil-lists ()

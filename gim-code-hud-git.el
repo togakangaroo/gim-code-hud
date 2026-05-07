@@ -79,10 +79,9 @@ Returns a sorted (PARTNER . COUNT) alist excluding REL itself."
                     collect (cons k (gethash k counts))))))
 
 (defun gim-code-hud--co-changes-async (file callback)
-  "Call CALLBACK with a sorted (PARTNER-FILE . COUNT) alist for FILE.
-Uses two git calls: one to find commits touching FILE, then one to expand
-each commit to all its changed files (git log --name-only filters by pathspec,
-so we cannot do this in a single invocation)."
+  "Call CALLBACK with (TOTAL . PAIRS) for FILE, or nil if FILE has no commits.
+TOTAL is the number of commits touching FILE; PAIRS is a sorted
+\((PARTNER-FILE . COUNT)) alist.  COUNT / TOTAL gives the co-change rate."
   (let ((dir (file-name-directory file))
         (rel (file-name-nondirectory file)))
     (gim-code-hud--git-async
@@ -97,7 +96,8 @@ so we cannot do this in a single invocation)."
             (append (list "log" "--no-walk" "--name-only" "--pretty=tformat:COMMIT") shas)
             (lambda (output)
               (funcall callback
-                       (gim-code-hud--parse-co-changes rel output))))))))))
+                       (cons (length shas)
+                             (gim-code-hud--parse-co-changes rel output)))))))))))
 
 (provide 'gim-code-hud-git)
 ;;; gim-code-hud-git.el ends here

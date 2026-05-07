@@ -26,7 +26,7 @@
 
 (loading…)
 
-** Co-change Partners
+** Code that changes whenver this file changes
 :PROPERTIES:
 :GIM_CODE_HUD_ANALYSIS_ID: co-changes
 :END:
@@ -74,19 +74,23 @@ text may be freely edited."
                  (format "%-30s %3d" (car pair) (cdr pair)))
                pairs "\n")))
 
-(defun gim-code-hud--format-co-changes (pairs root)
-  "Format co-change PAIRS ((FILE . COUNT) ...) as an org-link string under ROOT."
-  (if (null pairs)
+(defun gim-code-hud--format-co-changes (value root)
+  "Format co-change VALUE (TOTAL . PAIRS) as percentage + org-link lines under ROOT.
+Each line shows the co-change rate as a ceiling percentage before the file link."
+  (if (null value)
       "(none)"
-    (mapconcat (lambda (pair)
-                 (let* ((file  (car pair))
-                        (count (cdr pair))
-                        (path  (expand-file-name file root)))
-                   (format "[[file:%s][%s]]%s%3d"
-                           path file
-                           (make-string (max 1 (- 40 (length file))) ?\s)
-                           count)))
-               (-take 10 pairs) "\n")))
+    (let* ((total (car value))
+           (pairs (-take 10 (cdr value))))
+      (if (null pairs)
+          "(none)"
+        (mapconcat
+         (lambda (pair)
+           (let* ((file  (car pair))
+                  (count (cdr pair))
+                  (pct   (ceiling (* 100.0 (/ (float count) total))))
+                  (path  (expand-file-name file root)))
+             (format "%3d%% [[file:%s][%s]]" pct path file)))
+         pairs "\n")))))
 
 ;;; Init: write template
 
