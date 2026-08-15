@@ -544,6 +544,59 @@ Format: COMMIT<LF><LF>file1<LF>file2<LF>COMMIT<LF>..."
                      (gim-code-hud--db-get
                       db (gim-code-hud--db-key "git-status" "/proj/foo.el")))))))
 
+;;; in-flight dedup
+
+(ert-deftest gim-code-hud-test/fetch-section-skips-when-in-flight ()
+  "fetch-section does not dispatch a second time while one is outstanding."
+  (let ((gim-code-hud--in-flight (make-hash-table :test #'equal))
+        (calls 0))
+    (cl-letf (((symbol-function 'gim-code-hud--do-fetch-section)
+               (lambda (_file _section-id) (cl-incf calls))))
+      (gim-code-hud--fetch-section "/proj/foo.el" "purpose")
+      (gim-code-hud--fetch-section "/proj/foo.el" "purpose")
+      (should (= 1 calls)))))
+
+(ert-deftest gim-code-hud-test/fetch-section-marks-in-flight ()
+  "fetch-section records the (file . section-id) key as in-flight."
+  (let ((gim-code-hud--in-flight (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'gim-code-hud--do-fetch-section)
+               (lambda (_file _section-id) nil)))
+      (gim-code-hud--fetch-section "/proj/foo.el" "purpose")
+      (should (gethash (gim-code-hud--next-update-key "/proj/foo.el" "purpose")
+                        gim-code-hud--in-flight)))))
+
+(ert-deftest gim-code-hud-test/push-result-clears-in-flight ()
+  "push-result clears the in-flight marker so the next tick can refetch."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db             db)
+          (gim-code-hud--current-file   "/proj/foo.el")
+          (gim-code-hud--current-root   "/proj/")
+          (gim-code-hud--pending-updates (make-hash-table :test #'equal))
+          (gim-code-hud--next-update     (make-hash-table :test #'equal))
+          (gim-code-hud--in-flight       (make-hash-table :test #'equal)))
+      (puthash (gim-code-hud--next-update-key "/proj/foo.el" "git-status")
+               t gim-code-hud--in-flight)
+      (gim-code-hud--push-result "/proj/foo.el" "git-status" "clean")
+      (should-not (gethash (gim-code-hud--next-update-key "/proj/foo.el" "git-status")
+                            gim-code-hud--in-flight)))))
+
+(ert-deftest gim-code-hud-test/fetch-section-refetches-after-push-result ()
+  "After push-result clears in-flight, fetch-section dispatches again."
+  (gim-code-hud-test/with-db db
+    (let ((gim-code-hud--db             db)
+          (gim-code-hud--current-file   "/proj/foo.el")
+          (gim-code-hud--current-root   "/proj/")
+          (gim-code-hud--pending-updates (make-hash-table :test #'equal))
+          (gim-code-hud--next-update     (make-hash-table :test #'equal))
+          (gim-code-hud--in-flight       (make-hash-table :test #'equal))
+          (calls 0))
+      (cl-letf (((symbol-function 'gim-code-hud--do-fetch-section)
+                 (lambda (_file _section-id) (cl-incf calls))))
+        (gim-code-hud--fetch-section "/proj/foo.el" "git-status")
+        (gim-code-hud--push-result "/proj/foo.el" "git-status" "clean")
+        (gim-code-hud--fetch-section "/proj/foo.el" "git-status")
+        (should (= 2 calls))))))
+
 ;;; HUD visibility
 
 (ert-deftest gim-code-hud-test/hud-visible-false-when-no-buffer ()

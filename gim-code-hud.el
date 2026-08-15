@@ -45,6 +45,11 @@
 (defvar gim-code-hud--pending-updates (make-hash-table :test #'equal)
   "Map of section-id -> (value . retrieved-at), drained by the flush timer.")
 
+(defvar gim-code-hud--in-flight (make-hash-table :test #'equal)
+  "Set of (file . section-id) with a fetch currently outstanding.
+Prevents the staleness timer from starting a duplicate fetch (and thus a
+duplicate LLM call) for a section whose previous fetch hasn't returned yet.")
+
 (defvar gim-code-hud--staleness-timer nil
   "Repeating timer that checks for expired sections every 5 s, or nil.")
 
@@ -130,6 +135,7 @@
 
 (defun gim-code-hud--push-result (file section-id value)
   "Format VALUE, store in SQLite and pending-updates map for SECTION-ID of FILE."
+  (remhash (gim-code-hud--next-update-key file section-id) gim-code-hud--in-flight)
   (when (equal file gim-code-hud--current-file)
     (let* ((text (gim-code-hud--value-to-string section-id value))
            (db   (gim-code-hud--ensure-db file)))
@@ -139,7 +145,15 @@
       (puthash section-id (cons text (float-time)) gim-code-hud--pending-updates))))
 
 (defun gim-code-hud--fetch-section (file section-id)
-  "Asynchronously fetch SECTION-ID for FILE and push result when done."
+  "Asynchronously fetch SECTION-ID for FILE and push result when done.
+No-ops if a fetch for this (FILE . SECTION-ID) is already outstanding."
+  (let ((key (gim-code-hud--next-update-key file section-id)))
+    (unless (gethash key gim-code-hud--in-flight)
+      (puthash key t gim-code-hud--in-flight)
+      (gim-code-hud--do-fetch-section file section-id))))
+
+(defun gim-code-hud--do-fetch-section (file section-id)
+  "Unconditionally dispatch the async fetch for SECTION-ID of FILE."
   (let ((push (lambda (v) (gim-code-hud--push-result file section-id v))))
     (pcase section-id
       ("git-status"   (gim-code-hud--git-status-async   file push))
@@ -261,7 +275,8 @@
     (setq gim-code-hud--current-file nil
           gim-code-hud--current-root nil)
     (clrhash gim-code-hud--next-update)
-    (clrhash gim-code-hud--pending-updates)))
+    (clrhash gim-code-hud--pending-updates)
+    (clrhash gim-code-hud--in-flight)))
 
 ;;; Interactive commands
 
